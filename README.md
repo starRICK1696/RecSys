@@ -19,7 +19,7 @@ errors on observed interactions.  The posterior probabilities of the
 `signal_components` lowest-error components are summed into the confidence
 weight.  `K=1` is an unweighted-ridge ablation.  Unobserved entries receive a configurable small
 `zero_weight`; setting it to zero makes positive-only implicit reconstruction
-degenerate.  The exact M-step is
+degenerate.  The exact M-step is 
 
 ```text
 beta[j] = (Z^T W[j] Z + lambda I)^(-1) Z^T W[j] r[j].
