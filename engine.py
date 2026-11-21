@@ -51,12 +51,16 @@ def evaluate(
     *,
     k: int = 20,
     batch_size: int = 512,
+    seen: sp.csr_matrix | None = None,
 ) -> EvaluationResult:
     """Evaluate full-catalog ranking while masking observed training items."""
     if train.shape != heldout.shape:
         raise ValueError("train and heldout shapes differ")
     if k <= 0 or batch_size <= 0:
         raise ValueError("k and batch_size must be positive")
+    seen = train if seen is None else seen
+    if seen.shape != train.shape:
+        raise ValueError("seen mask and train shapes differ")
     top_k = min(k, train.shape[1])
     discounts = 1.0 / np.log2(np.arange(2, top_k + 2, dtype=np.float64))
     recall_sum = 0.0
@@ -70,11 +74,12 @@ def evaluate(
         scores = np.asarray(model.score(users, train), dtype=np.float32)
         if scores.shape != (users.size, train.shape[1]):
             raise ValueError(f"model returned scores with invalid shape {scores.shape}")
-        _mask_seen(scores, train[start:end])
+        _mask_seen(scores, seen[start:end])
         candidates = np.argpartition(scores, -top_k, axis=1)[:, -top_k:]
         candidate_scores = np.take_along_axis(scores, candidates, axis=1)
         order = np.argsort(candidate_scores, axis=1)[:, ::-1]
         ranking = np.take_along_axis(candidates, order, axis=1)
+        finite_ranked = np.isfinite(np.take_along_axis(candidate_scores, order, axis=1))
 
         target_batch = heldout[start:end]
         for local_user in range(users.size):
@@ -82,7 +87,7 @@ def evaluate(
             relevant = target_batch.indices[left:right]
             if relevant.size == 0:
                 continue
-            hits = np.isin(ranking[local_user], relevant, assume_unique=False)
+            hits = np.isin(ranking[local_user], relevant, assume_unique=False) & finite_ranked[local_user]
             recall_sum += float(hits.sum()) / relevant.size
             dcg = float(np.dot(hits, discounts))
             ideal = float(discounts[: min(relevant.size, top_k)].sum())
@@ -111,11 +116,12 @@ def fit_and_evaluate(
     noise_ratio: float,
     k: int = 20,
     batch_size: int = 512,
+    seen: sp.csr_matrix | None = None,
 ) -> RunResult:
     started = perf_counter()
     model.fit(train)
     train_seconds = perf_counter() - started
-    metrics = evaluate(model, train, test, k=k, batch_size=batch_size)
+    metrics = evaluate(model, train, test, k=k, batch_size=batch_size, seen=seen)
     return RunResult(
         dataset=dataset,
         model=model_name,

@@ -155,3 +155,128 @@ display(plot_robustness("RecSys/results/robustness_dirichlet.csv"))
   edges.  The ratio is relative to the original number of training edges.
 
 Run tests with `python -m pytest RecSys/tests -q`.
+
+## KT-2 controlled experiments
+
+The new `ResearchAE` in `kt2_models.py` is an explicitly target-excluded
+linear decoder. It removes the target from both the random projection and
+mean genre profile for each itemwise training system. This implementation
+is separate from the original `ProbAE`; results for the two implementations
+must not be silently combined.
+
+Implemented controls:
+
+- unit weights, hard trimming, Gaussian, Student-t (df=3), Cauchy (df=1);
+- two-component mixtures of `log(error**2 + 1e-8)`, 40 inner updates,
+  minimum posterior weight 0.02; lower-location component designated signal
+  as a hypothesis, not an identified truth;
+- genres × weights, shuffled genre rows, matched total feature dimension,
+  genre-cosine baseline, and nested histories of 5/10/20 events;
+- quantile versus two random mixture starts, 0/1/2/5/10 outer iterations;
+- three-fold error control: auxiliary models exclude held-out events from
+  features and loss, including their potential contribution as negatives;
+- per-popularity and per-history weight distributions and ranking metrics.
+
+The decoder uses weighted squared loss and ridge regularization. The t-mixture
+latent precision only updates mixture parameters; decoder weights remain
+component-membership posteriors. The outer loop is not claimed to be EM for
+a single joint likelihood. Heavy tails need not improve either detection or ranking.
+
+### Reproduce the pilot
+
+Status after the user's request to stop execution: the current equal-budget
+suite has NOT been run. `output/kt2/pilot/` is an earlier exploratory run with
+two trials for non-trim variants and six for trimming. Do not use it as the
+final controlled comparison. The reproduction script writes fresh results
+to `output/kt2/pilot_v2/`. The new plotting module has been written but has
+not been executed or visually verified. Existing tests passed before stopping;
+no further execution is performed automatically.
+
+From the `RecSys` directory:
+
+```bash
+sh scripts/run_kt2.sh /path/to/ml-1m
+```
+
+The pilot selects the 600 most popular positive-rated movies and 240 randomly
+sampled eligible users (selection seed 1729). Eligibility requires 22 positive
+ratings after the item filter. Thus the pilot excludes the global item tail
+and very short natural histories; its groups are relative to this subset.
+It is not a full MovieLens-1M benchmark. Histories 5/10/20 simulate sparse
+inputs on a fixed eligible population, not naturally cold-start users.
+
+For the full eligible MovieLens cohort, run from the parent directory:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+  RecSys/.venv/bin/python -m RecSys.kt2_experiments \
+  --data /path/to/ml-1m --output RecSys/output/kt2/full \
+  --seeds 42 43 44 45 46
+RecSys/.venv/bin/python -m RecSys.plot_kt2 --input RecSys/output/kt2/full
+```
+
+Full runs are computationally expensive: every outer update solves an
+item-specific system; cross-fitting fits additional models. Partial tables
+are written after every completed evaluation. A rerun replaces tables and
+starts again; resumption is not implemented. Use a fresh output directory for
+a different protocol or subset. `manifest.json` records sample IDs and arguments.
+
+### Evaluation protocol
+
+Ratings >=4; random per-user leave-one-out validation and test; noise injected
+only after splitting. Additions cannot overlap validation/test. Train-time
+features use only available training interactions. The evaluator's separate
+`seen` mask is original train UNION observed noisy train. Consequently deleted
+Noisy 0 events remain excluded and added Noisy 1 events are also masked.
+For shortened histories, the original train remains masked, keeping a common
+candidate set across history lengths and models. These evaluation-only masks
+are never passed as model input. No validation-to-train refit is performed.
+
+For each seed and variant, hyperparameters are selected on CLEAN validation
+NDCG@20 and frozen across noise levels. Each ResearchAE variant gets three
+trials per lambda, using zero weights 0.005/0.01/0.05. For trimming these are
+paired with trim fractions 0.05/0.10/0.20 (a bounded search, not a Cartesian
+grid). Thus all five weighting methods receive the same trial count. Stability and cross-fit diagnostics
+inherit that variant's chosen hyperparameters; they are not additional searches
+on test. The old `tune_probae` continues to use its separately documented
+synthetic three-condition validation objective.
+
+Detection positive labels mean artificially added events, not verified real
+noise. AP uses threshold-grouped ties; its random-reference prevalence is
+approximately rho/(1+rho), not rho. At 0% additions or for Noisy 0, detection
+is undefined and omitted. Unit weights give AUROC=0.5 and AP=prevalence.
+
+Figures contain means and observed min/max over seeds, NOT 95% confidence
+intervals. `paired_deltas.csv` contains matched-seed differences versus unit
+weights. The pilot supports exploratory conclusions only. Five-seed full-data
+experiments and paired user-level/hierarchical bootstrap remain final-report work.
+No transfer claim is made beyond this target-excluded linear decoder; EASE and
+SVD-AE are external performance baselines, not weight-transfer experiments.
+LightFM and Mult-VAE expansion are deferred; original Mult-VAE remains available
+through `main.py`.
+
+### Report artifacts
+
+After running the script, `output/kt2/pilot_v2/` will contain raw metrics,
+validation trials, manifest, grouped metrics, weight arrays, summaries and
+vector-PDF figures only (existing PNG files are not deleted). Regenerate charts
+without retraining with `python -m RecSys.plot_kt2 --input <run-directory>`.
+The plan and implementation report are HTML documents under `output/kt2/`.
+They can be opened in a browser and printed to PDF. The earlier pilot folder
+contains raw metrics and weights only; charts have not been built.
+
+### Literature and scope
+
+- [ADT, Wang et al., WSDM 2021](https://arxiv.org/abs/2006.04153): truncates or
+  reweights high-loss observations during training. Our fixed-quantile trimming
+  control is not a reproduction of the complete ADT procedure.
+- [DeCA, Wang et al., WWW 2022](https://arxiv.org/abs/2105.09605): uses agreement
+  between recommendation models. Our single-decoder mixture does not use this
+  independent source of evidence.
+- [DCF, He et al., KDD 2024](https://arxiv.org/abs/2405.11272): examines loss
+  trajectories and label correction to distinguish difficult samples from noise.
+  A single large reconstruction error does not resolve this distinction.
+- [Peel and McLachlan, 2000](https://people.smp.uq.edu.au/GeoffMcLachlan/pm_sc00.pdf):
+  t-mixtures reduce atypical observations' influence on component parameter
+  estimation. This motivates the mixture family, but does not establish that
+  its lower-location component represents genuine recommendation interests.

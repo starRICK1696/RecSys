@@ -150,6 +150,7 @@ def run(args: argparse.Namespace) -> list[RunResult]:
                     factories[model_name](),
                     noisy_train,
                     dataset.test,
+                    seen=dataset.train.maximum(noisy_train),
                     dataset=dataset.name,
                     model_name=model_name,
                     noise_type=noise_type,

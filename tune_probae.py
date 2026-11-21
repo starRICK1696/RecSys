@@ -112,7 +112,8 @@ def _evaluate_config(
     for name, train in scenarios.items():
         model = config.create_model(seed=seed)
         model.fit(train)
-        results[name] = evaluate(model, train, heldout, k=20, batch_size=batch_size)
+        results[name] = evaluate(model, train, heldout, k=20, batch_size=batch_size,
+                                 seen=scenarios["clean"].maximum(train))
     return results, perf_counter() - started
 
 
