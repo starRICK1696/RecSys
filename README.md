@@ -47,6 +47,16 @@ in the experiment CLI, or pass `gmm_components=K, signal_components=S` to
 
 ## Run
 
+Create an environment and install the package from the repository root.
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+```
+
+Run the following examples from the repository root.
+
 Tune ProbAE on the default synthetic dataset with a stratified, validation-only
 random search over `K=1,2,3,4`, signal components, rank, ridge strength, zero
 weight, and outer EM iterations:
@@ -58,7 +68,7 @@ python -m RecSys.tune_probae --trials 32
 The selection metric is mean validation Recall@20 across clean, 10% Noisy 1,
 and 10% Noisy 0 conditions (NDCG@20 breaks ties).  Test is evaluated only for
 the selected configuration.  The bounded search saves trials and a JSON
-summary under `RecSys/results/`; it does not establish a global optimum.
+summary under `results/`; it does not establish a global optimum.
 
 With seed 42 and the default 2,000 × 1,000 synthetic dataset, the best of 32
 sampled configurations was `K=4`, `signal_components=1`, `rank=64`,
@@ -70,7 +80,7 @@ configuration in the robustness sweep with:
 python -m RecSys.main --format synthetic --models ProbAE \
   --rank 64 --prob-regularization 100 --zero-weight 0.05 \
   --gmm-components 4 --signal-components 1 --em-iterations 2 \
-  --output RecSys/results/robustness_dirichlet_tuned.csv
+  --output results/robustness_dirichlet_tuned.csv
 ```
 
 Generic model defaults remain unchanged: synthetic-tuned values should not be
@@ -85,19 +95,19 @@ topic and an item, rejecting duplicate user-item pairs.  The defaults are
 concentrations produce more concentrated preferences.  Adjust them with
 `--n-topics`, `--user-concentration`, and `--item-concentration`.
 
-**Provenance:** Existing `RecSys/results/robustness.csv` and its PNG were
+**Provenance:** Older local copies of `results/robustness.csv` and its PNG were
 generated with the previous dot-product generator.  Rerun the sweep to obtain
 results for the new generator, preferably into a new filename such as
 `robustness_dirichlet.csv`.
 
-From the repository root (module mode is the supported script entry point):
+Run the robustness sweep with the synthetic dataset.
 
 ```bash
 python -m RecSys.main \
   --format synthetic \
   --noise-levels 0,0.05,0.10,0.15,0.20 \
   --noise-types noisy_1,noisy_0 \
-  --output RecSys/results/robustness_dirichlet.csv
+  --output results/robustness_dirichlet.csv
 ```
 
 Quick smoke run:
@@ -124,23 +134,26 @@ python -m RecSys.main --format npz --data data/train.npz
 In Jupyter, import `load_dataset`, `inject_noise`, models, and `evaluate` from
 the `RecSys` package.  CSV output is replaced atomically after every completed
 run, so long grids retain partial results if interrupted.
+`--top-k` sets the metric cutoff and the CSV column suffix, for example
+`recall_at_3` and `ndcg_at_3` for `--top-k 3`.
 
 ## Visualize results
 
 ```bash
 python -m RecSys.plot_robustness \
-  --input RecSys/results/robustness_dirichlet.csv \
-  --output RecSys/results/robustness_dirichlet.png
+  --input results/robustness_dirichlet.csv \
+  --output results/robustness_dirichlet.png
 ```
 
-The figure compares Recall@20, NDCG@20, and training time across noise levels,
-with separate columns for `Noisy 1` and `Noisy 0`.  Use `--no-time` to omit the
+The figure compares Recall and NDCG at the cutoff recorded in the CSV alongside
+training time, with separate columns for `Noisy 1` and `Noisy 0`. Use
+`--no-time` to omit the
 timing row, or change the output extension to `.pdf` for a vector figure.  In
 Jupyter:
 
 ```python
 from RecSys.plot_robustness import plot_robustness
-display(plot_robustness("RecSys/results/robustness_dirichlet.csv"))
+display(plot_robustness("results/robustness_dirichlet.csv"))
 ```
 
 ## Experimental cautions
@@ -154,7 +167,7 @@ display(plot_robustness("RecSys/results/robustness_dirichlet.csv"))
 - `Noisy 1` adds random false-positive edges; `Noisy 0` removes true training
   edges.  The ratio is relative to the original number of training edges.
 
-Run tests with `python -m pytest RecSys/tests -q`.
+Install `pytest` in the project environment and run `python -m pytest -q`.
 
 ## KT-2 controlled experiments
 
@@ -184,19 +197,17 @@ a single joint likelihood. Heavy tails need not improve either detection or rank
 
 ### Reproduce the pilot
 
-Status after the user's request to stop execution: the current equal-budget
-suite has NOT been run. `output/kt2/pilot/` is an earlier exploratory run with
-two trials for non-trim variants and six for trimming. Do not use it as the
-final controlled comparison. The reproduction script writes fresh results
-to `output/kt2/pilot_v2/`. The new plotting module has been written but has
-not been executed or visually verified. Existing tests passed before stopping;
-no further execution is performed automatically.
-
-From the `RecSys` directory:
+The saved equal-budget pilot in [`output/kt2/pilot_v2/`](output/kt2/pilot_v2/)
+contains 426 evaluations across the three seeds listed in its manifest. To
+reproduce it, run the script in the project environment.
 
 ```bash
 sh scripts/run_kt2.sh /path/to/ml-1m
 ```
+
+The script creates a fresh directory under `results/kt2/` by default. Pass a new
+or empty directory as the second argument to choose the output location. The
+script uses `python3` from `PATH`. Set `RECSYS_PYTHON` to select another interpreter.
 
 The pilot selects the 600 most popular positive-rated movies and 240 randomly
 sampled eligible users (selection seed 1729). Eligibility requires 22 positive
@@ -205,21 +216,21 @@ and very short natural histories; its groups are relative to this subset.
 It is not a full MovieLens-1M benchmark. Histories 5/10/20 simulate sparse
 inputs on a fixed eligible population, not naturally cold-start users.
 
-For the full eligible MovieLens cohort, run from the parent directory:
+Run the full eligible MovieLens cohort with the following commands.
 
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
-  RecSys/.venv/bin/python -m RecSys.kt2_experiments \
-  --data /path/to/ml-1m --output RecSys/output/kt2/full \
+  python -m RecSys.kt2_experiments \
+  --data /path/to/ml-1m --output results/kt2/full \
   --seeds 42 43 44 45 46
-RecSys/.venv/bin/python -m RecSys.plot_kt2 --input RecSys/output/kt2/full
+python -m RecSys.plot_kt2 --input results/kt2/full
 ```
 
 Full runs are computationally expensive: every outer update solves an
 item-specific system; cross-fitting fits additional models. Partial tables
-are written after every completed evaluation. A rerun replaces tables and
-starts again; resumption is not implemented. Use a fresh output directory for
-a different protocol or subset. `manifest.json` records sample IDs and arguments.
+are written after every completed evaluation. Each run starts from scratch and
+requires a new or empty output directory. `manifest.json` records sample IDs and
+arguments.
 
 ### Evaluation protocol
 
@@ -257,13 +268,10 @@ through `main.py`.
 
 ### Report artifacts
 
-After running the script, `output/kt2/pilot_v2/` will contain raw metrics,
-validation trials, manifest, grouped metrics, weight arrays, summaries and
-vector-PDF figures only (existing PNG files are not deleted). Regenerate charts
-without retraining with `python -m RecSys.plot_kt2 --input <run-directory>`.
-The plan and implementation report are HTML documents under `output/kt2/`.
-They can be opened in a browser and printed to PDF. The earlier pilot folder
-contains raw metrics and weights only; charts have not been built.
+Each run directory contains raw metrics, validation trials, a manifest,
+grouped metrics and weight arrays. The script also generates summaries and
+PDF figures. Regenerate charts from saved metrics with
+`python -m RecSys.plot_kt2 --input <run-directory>`.
 
 ### Literature and scope
 

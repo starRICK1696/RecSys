@@ -142,10 +142,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--item-concentration", type=float, default=0.05)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument(
-        "--output", type=Path, default=Path("RecSys/results/probae_tuning_dirichlet.csv")
+        "--output", type=Path, default=Path("results/probae_tuning_dirichlet.csv")
     )
     parser.add_argument(
-        "--summary", type=Path, default=Path("RecSys/results/probae_tuning_dirichlet.json")
+        "--summary", type=Path, default=Path("results/probae_tuning_dirichlet.json")
     )
     return parser
 

@@ -82,7 +82,11 @@ def write_csv(path, rows):
 
 
 def run(args):
-    out = args.output; out.mkdir(parents=True, exist_ok=True)
+    out = args.output
+    out.mkdir(parents=True, exist_ok=True)
+    output_error = f"Output directory is not empty: {out}. Choose a fresh directory with --output."
+    if any(out.iterdir()):
+        raise FileExistsError(output_error)
     matrix, features, mapping = load_movielens(args.data, args.max_users, args.max_items)
     if min(matrix.shape) < 2:
         raise ValueError("not enough eligible data")
@@ -94,7 +98,13 @@ def run(args):
         "limitations": "original events are not verified clean; subset results exploratory; no transfer claim beyond this linear decoder",
         "versions": {"python": platform.python_version(), "numpy": np.__version__, "scipy": scipy.__version__},
         **mapping}
-    (out/"manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path = out / "manifest.json"
+    try:
+        # Claim the directory before writing reports, even if another run just passed the check.
+        with manifest_path.open("x", encoding="utf-8") as stream:
+            json.dump(manifest, stream, indent=2)
+    except FileExistsError as exc:
+        raise FileExistsError(output_error) from exc
     rows, diagnostics, groups, tuning = [], [], [], []
     methods = ["unit", "trim", "gaussian", "student", "cauchy"]
     def record(model, train, ds, meta, clean=None):
@@ -177,6 +187,8 @@ def run(args):
                     config = tune(f"{name} history={length}", method, f, rank, short)
                     record(ResearchAE(**config), short, ds, dict(suite="hybrid", model=name, seed=seed, history=length))
                 record(GenreCosine(features), short, ds, dict(suite="hybrid", model="Genre cosine", seed=seed, history=length))
+        if "stability" not in args.suites and "crossfit" not in args.suites:
+            continue
         noisy = inject_noise(ds.train, .1, noise_type="noisy_1", exclude=ds.validation+ds.test, seed=seed)
         if "stability" in args.suites:
             for method in ["gaussian","student","cauchy"]:
@@ -190,14 +202,17 @@ def run(args):
                     config = {**selected[method], "crossfit": folds}
                     record(ResearchAE(**config), noisy, ds, dict(suite="crossfit",model=method,seed=seed,noise=.1,folds=folds))
     manifest["completed_runs"] = len(rows)
-    (out/"manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    temporary_manifest = manifest_path.with_suffix(".tmp")
+    temporary_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    temporary_manifest.replace(manifest_path)
     return rows
 
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data",type=Path,required=True)
-    p.add_argument("--output",type=Path,default=Path("output/kt2/full"))
+    p.add_argument("--output", type=Path, default=Path("output/kt2/full"),
+                   help="new or empty directory for this run")
     p.add_argument("--max-users",type=int,default=0); p.add_argument("--max-items",type=int,default=0)
     p.add_argument("--rank",type=int,default=16); p.add_argument("--outer",type=int,default=2)
     p.add_argument("--seeds",type=int,nargs="+",default=[42,43,44])

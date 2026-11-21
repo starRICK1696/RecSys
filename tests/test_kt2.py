@@ -94,5 +94,12 @@ def test_movielens_mapping_and_runner(tmp_path):
         '--rank','2','--seeds','42','--lambdas','1','--noise-levels','0','.1','--suites','robustness'])
     rows=run(args)
     assert len(rows)==28
-    assert (tmp_path/'out'/'manifest.json').exists()
     assert all(np.isfinite(r['ndcg']) for r in rows)
+
+    original = {path.name: path.read_bytes() for path in args.output.iterdir()}
+    assert {'manifest.json', 'metrics.csv', 'groups.csv', 'weights_unit_42.npz'} <= original.keys()
+    args.seeds = [99]
+    args.noise_levels = [0]
+    with pytest.raises(FileExistsError, match='Choose a fresh directory'):
+        run(args)
+    assert {path.name: path.read_bytes() for path in args.output.iterdir()} == original

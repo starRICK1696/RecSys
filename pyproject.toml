@@ -9,6 +9,16 @@ description = "Probabilistic Weighting Autoencoder experiments"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.26", "scipy>=1.11", "torch>=2.1", "matplotlib>=3.7", "typing-extensions>=4.8"]
 
+[tool.setuptools]
+packages = ["RecSys"]
+include-package-data = false
+
+[tool.setuptools.package-dir]
+RecSys = "."
+
+[tool.setuptools.package-data]
+RecSys = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

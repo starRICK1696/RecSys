@@ -2,14 +2,15 @@
 
 Examples:
     python -m RecSys.plot_robustness
-    python -m RecSys.plot_robustness --input RecSys/results/robustness.csv \
-        --output RecSys/results/robustness.pdf
+    python -m RecSys.plot_robustness --input results/robustness.csv \
+        --output results/robustness.pdf
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,9 +31,10 @@ class ResultRow:
     model: str
     noise_type: str
     noise_ratio: float
-    recall_at_20: float
-    ndcg_at_20: float
+    recall: float
+    ndcg: float
     train_seconds: float
+    k: int
 
 
 REQUIRED_COLUMNS = {
@@ -40,8 +42,6 @@ REQUIRED_COLUMNS = {
     "model",
     "noise_type",
     "noise_ratio",
-    "recall_at_20",
-    "ndcg_at_20",
     "train_seconds",
 }
 MODEL_ORDER = ("ProbAE", "SVD_AE", "EASE", "MultVAE")
@@ -66,7 +66,19 @@ def load_results(path: str | Path) -> list[ResultRow]:
 
     with source.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
-        missing = REQUIRED_COLUMNS - set(reader.fieldnames or ())
+        columns = set(reader.fieldnames or ())
+        missing = REQUIRED_COLUMNS - columns
+        if missing:
+            raise ValueError(f"В CSV отсутствуют столбцы: {', '.join(sorted(missing))}")
+        cutoffs = {
+            int(match[1]) for column in columns
+            if (match := re.fullmatch(r"(?:recall|ndcg)_at_([1-9][0-9]*)", column))
+        }
+        if len(cutoffs) != 1:
+            raise ValueError("В CSV нужны Recall и NDCG с одним общим значением k")
+        k = cutoffs.pop()
+        recall_column, ndcg_column = f"recall_at_{k}", f"ndcg_at_{k}"
+        missing = {recall_column, ndcg_column} - columns
         if missing:
             raise ValueError(f"В CSV отсутствуют столбцы: {', '.join(sorted(missing))}")
 
@@ -78,23 +90,24 @@ def load_results(path: str | Path) -> list[ResultRow]:
                     model=str(raw["model"]),
                     noise_type=str(raw["noise_type"]),
                     noise_ratio=float(raw["noise_ratio"]),
-                    recall_at_20=float(raw["recall_at_20"]),
-                    ndcg_at_20=float(raw["ndcg_at_20"]),
+                    recall=float(raw[recall_column]),
+                    ndcg=float(raw[ndcg_column]),
                     train_seconds=float(raw["train_seconds"]),
+                    k=k,
                 )
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"Некорректные значения в строке {line_number}") from exc
             values = (
                 row.noise_ratio,
-                row.recall_at_20,
-                row.ndcg_at_20,
+                row.recall,
+                row.ndcg,
                 row.train_seconds,
             )
             if not all(np.isfinite(value) for value in values):
                 raise ValueError(f"Не-конечное значение в строке {line_number}")
-            if not 0 <= row.noise_ratio <= 1 or not 0 <= row.recall_at_20 <= 1:
+            if not 0 <= row.noise_ratio <= 1 or not 0 <= row.recall <= 1:
                 raise ValueError(f"Значение вне [0, 1] в строке {line_number}")
-            if not 0 <= row.ndcg_at_20 <= 1 or row.train_seconds < 0:
+            if not 0 <= row.ndcg <= 1 or row.train_seconds < 0:
                 raise ValueError(f"Значение метрики/времени вне диапазона в строке {line_number}")
             rows.append(row)
 
@@ -139,10 +152,8 @@ def plot_robustness(
     noise_types.extend(
         sorted({row.noise_type for row in rows} - set(noise_types))
     )
-    metrics = [
-        ("recall_at_20", "Recall@20", True),
-        ("ndcg_at_20", "NDCG@20", True),
-    ]
+    k = rows[0].k
+    metrics = [("recall", f"Recall@{k}", True), ("ndcg", f"NDCG@{k}", True)]
     if include_time:
         metrics.append(("train_seconds", "Время обучения, с", False))
 
@@ -209,8 +220,8 @@ def plot_robustness(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=Path("RecSys/results/robustness.csv"))
-    parser.add_argument("--output", type=Path, default=Path("RecSys/results/robustness.png"))
+    parser.add_argument("--input", type=Path, default=Path("results/robustness.csv"))
+    parser.add_argument("--output", type=Path, default=Path("results/robustness.png"))
     parser.add_argument("--dataset", type=str, default=None)
     parser.add_argument("--dpi", type=int, default=200)
     parser.add_argument("--no-time", action="store_true", help="Показывать только Recall/NDCG")

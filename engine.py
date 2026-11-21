@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
@@ -29,13 +29,25 @@ class RunResult:
     noise_ratio: float
     train_seconds: float
     inference_seconds: float
-    recall_at_20: float
-    ndcg_at_20: float
+    recall: float
+    ndcg: float
     users_evaluated: int
     train_nnz: int
+    k: int = 20
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            "dataset": self.dataset,
+            "model": self.model,
+            "noise_type": self.noise_type,
+            "noise_ratio": self.noise_ratio,
+            "train_seconds": self.train_seconds,
+            "inference_seconds": self.inference_seconds,
+            f"recall_at_{self.k}": self.recall,
+            f"ndcg_at_{self.k}": self.ndcg,
+            "users_evaluated": self.users_evaluated,
+            "train_nnz": self.train_nnz,
+        }
 
 
 def _mask_seen(scores: npt.NDArray[np.float32], seen: sp.csr_matrix) -> None:
@@ -129,8 +141,9 @@ def fit_and_evaluate(
         noise_ratio=noise_ratio,
         train_seconds=train_seconds,
         inference_seconds=metrics.inference_seconds,
-        recall_at_20=metrics.recall,
-        ndcg_at_20=metrics.ndcg,
+        recall=metrics.recall,
+        ndcg=metrics.ndcg,
         users_evaluated=metrics.users_evaluated,
         train_nnz=train.nnz,
+        k=k,
     )

@@ -23,7 +23,11 @@ def read(path):
 
 
 def plot(directory):
-    data=read(directory/'metrics.csv'); manifest=json.loads((directory/'manifest.json').read_text())
+    metrics_path = directory / 'metrics.csv'
+    data = read(metrics_path)
+    if not data:
+        raise ValueError(f'No completed evaluations in {metrics_path}')
+    manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
     target=directory/'figures'; target.mkdir(exist_ok=True)
     seeds=sorted({r['seed'] for r in data})
     caption=f'MovieLens-1M {"subset" if manifest["subset"] else "eligible cohort"}: {manifest["shape"][0]} users, {manifest["shape"][1]} items; {len(seeds)} seeds'
